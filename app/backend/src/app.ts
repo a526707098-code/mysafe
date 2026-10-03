@@ -6,6 +6,8 @@ import { EncryptionService } from "./crypto/encryption.js";
 import { EnvKeyProvider } from "./crypto/key-provider.js";
 import type { Pool } from "./db/pool.js";
 import { registerAuthRoutes } from "./modules/auth/routes.js";
+import { registerItemRoutes } from "./modules/items/routes.js";
+import { ItemError } from "./modules/items/service.js";
 
 export interface AppDeps {
   env: Env;
@@ -23,6 +25,14 @@ export async function buildApp({ env, pool, now }: AppDeps): Promise<FastifyInst
         ? false
         : {
             level: env.NODE_ENV === "production" ? "info" : "debug",
+            serializers: {
+              // Search terms travel in the query string: log the path only.
+              req: (req) => ({
+                method: req.method,
+                url: req.url?.split("?")[0],
+                remoteAddress: req.ip,
+              }),
+            },
             // Defence in depth: even if a handler logs a request object, these never reach the log.
             redact: {
               paths: [
@@ -47,6 +57,7 @@ export async function buildApp({ env, pool, now }: AppDeps): Promise<FastifyInst
 
   // Never leak internals: production clients get a generic message and a request id.
   app.setErrorHandler((err, req, reply) => {
+    if (err instanceof ItemError) return reply.status(err.status).send({ error: err.message });
     req.log.error({ err }, "request failed");
     const e = err as { statusCode?: number; message?: string };
     const status = e.statusCode ?? 500;
@@ -84,12 +95,17 @@ export async function buildApp({ env, pool, now }: AppDeps): Promise<FastifyInst
     return reply.status(healthy ? 200 : 503).send({ status: healthy ? "ok" : "degraded", checks });
   });
 
-  registerAuthRoutes(app, {
+  const { requireActive } = registerAuthRoutes(app, {
     env,
     pool,
     now,
     totpCrypto: new EncryptionService(new EnvKeyProvider(1, env.TOTP_ENCRYPTION_KEY)),
   });
+
+  const enc = new EncryptionService(
+    new EnvKeyProvider(env.ENCRYPTION_KEY_VERSION, env.ENCRYPTION_KEY, env.ENCRYPTION_KEY_PREVIOUS),
+  );
+  registerItemRoutes(app, { env, pool, enc, requireActive });
 
   return app;
 }

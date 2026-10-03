@@ -75,7 +75,7 @@ const safeEq = (a: string, b: string) => {
 };
 
 /** Only called behind requireStage(), which guarantees a session. */
-const cur = (req: FastifyRequest) => req.session as SessionRow;
+export const cur = (req: FastifyRequest) => req.session as SessionRow;
 
 export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps) {
   const { env, pool, totpCrypto } = deps;
@@ -105,7 +105,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps) {
 
   /** Origin + content-type on every write; CSRF token on every write that has a session. */
   app.addHook("preHandler", async (req, reply) => {
-    if (!req.url.startsWith("/api/auth") && !req.url.startsWith("/api/sessions")) return;
+    if (!req.url.startsWith("/api/") || req.url.startsWith("/api/health")) return;
     req.session = (await findSession(pool, cfg, req.cookies[cookieName], now())) ?? undefined;
     if (req.method === "GET" || req.method === "HEAD") return;
     const ct = (req.headers["content-type"] ?? "").split(";")[0]?.trim();
@@ -528,4 +528,6 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps) {
     });
     return { revoked: n };
   });
+
+  return { requireActive: requireStage("active") };
 }

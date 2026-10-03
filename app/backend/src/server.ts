@@ -7,6 +7,7 @@ import { createPool } from "./db/pool.js";
 import { migrate } from "./db/migrate.js";
 import { purgeDeadSessions } from "./modules/auth/sessions.js";
 import { buildApp } from "./app.js";
+import { purgeExpired } from "./modules/items/service.js";
 
 let env;
 try {
@@ -33,6 +34,17 @@ const result = await migrate(pool, migrationsDir);
 app.log.info({ applied: result.applied, skipped: result.skipped }, "database migrations");
 
 setInterval(() => void purgeDeadSessions(pool).catch(() => {}), 3_600_000).unref();
+
+setInterval(
+  () =>
+    void purgeExpired(
+      { pool, enc: encryption, allowCvv: env.ALLOW_CVV_STORAGE },
+      env.TRASH_RETENTION_DAYS,
+    )
+      .then((n) => n && app.log.info({ purged: n }, "trash purged"))
+      .catch(() => {}),
+  3_600_000,
+).unref();
 
 await app.listen({ port: env.PORT, host: env.HOST });
 
