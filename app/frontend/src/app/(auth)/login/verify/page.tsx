@@ -70,7 +70,7 @@ export default function VerifyPage() {
           <Input
             value={recoveryCode}
             onChange={(e) => setRecoveryCode(e.target.value.toUpperCase())}
-            placeholder="XXXX-XXXX"
+            placeholder="XXXXX-XXXXX"
             className="ltr h-14 text-center font-mono text-xl tracking-widest"
             autoComplete="off"
             autoFocus
@@ -95,7 +95,7 @@ export default function VerifyPage() {
           size="lg"
           className="w-full"
           loading={busy}
-          disabled={recovery ? recoveryCode.length < 9 : code.length !== 6}
+          disabled={recovery ? recoveryCode.length < 11 : code.length !== 6}
         >
           אימות וכניסה
         </Button>

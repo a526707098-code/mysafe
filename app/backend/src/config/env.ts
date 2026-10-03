@@ -37,6 +37,11 @@ const schema = z.object({
   ENCRYPTION_KEY_PREVIOUS: z.preprocess((v) => (v === "" ? undefined : v), key32.optional()),
   ENCRYPTION_KEY_VERSION: z.coerce.number().int().min(1).max(65535).default(1),
   TOTP_ENCRYPTION_KEY: key32,
+  /**
+   * First-launch guard: whoever reaches /setup first becomes the owner, so on a
+   * reachable host the setup form demands this value (from .env). Required in production.
+   */
+  SETUP_TOKEN: z.preprocess((v) => (v === "" ? undefined : v), secret.optional()),
 
   /** Exact origin of the UI, e.g. https://vault.example.ts.net. Writes from any other Origin are rejected. */
   APP_ORIGIN: z.string().url(),
@@ -81,6 +86,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     const keys = [env.ENCRYPTION_KEY, env.TOTP_ENCRYPTION_KEY];
     if (new Set(keys).size !== keys.length)
       problems.push("TOTP_ENCRYPTION_KEY: must differ from ENCRYPTION_KEY");
+    if (!env.SETUP_TOKEN) problems.push("SETUP_TOKEN: required in production");
     if (env.APP_SECRET === env.SESSION_SECRET)
       problems.push("SESSION_SECRET: must differ from APP_SECRET");
   }

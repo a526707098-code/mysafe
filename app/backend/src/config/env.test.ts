@@ -12,6 +12,7 @@ const base = () => ({
   ENCRYPTION_KEY: key(),
   TOTP_ENCRYPTION_KEY: key(),
   APP_ORIGIN: "https://vault.example.ts.net",
+  SETUP_TOKEN: randomBytes(24).toString("hex"),
 });
 
 test("accepts a complete production configuration", () => {
@@ -63,5 +64,14 @@ test("treats an empty optional key (as written by docker compose) as unset", () 
   assert.equal(
     loadEnv({ ...base(), ENCRYPTION_KEY_PREVIOUS: "" }).ENCRYPTION_KEY_PREVIOUS,
     undefined,
+  );
+});
+
+test("production refuses to start without SETUP_TOKEN", () => {
+  const { SETUP_TOKEN: _drop, ...rest } = base();
+  void _drop;
+  assert.throws(
+    () => loadEnv(rest),
+    (e) => e instanceof EnvError && e.message.includes("SETUP_TOKEN"),
   );
 });

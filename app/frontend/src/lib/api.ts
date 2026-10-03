@@ -2,13 +2,14 @@
 
 /**
  * Boundary between UI and backend. Every call here maps 1:1 to a REST endpoint
- * documented in docs/ARCHITECTURE.md. The prototype resolves them against
- * mock data; integration swaps the bodies for fetch() calls with the CSRF
- * header, keeping signatures unchanged.
+ * documented in docs/ARCHITECTURE.md. Authentication is live (auth-client.ts);
+ * the vault data below still resolves against mock data until phase 3.
  */
 import { mockSecrets } from "./mock-data";
 import { vault } from "./vault-store";
 import type { AuditEventType } from "./types";
+import { auth, MOCK_AUTH } from "./auth-client";
+import { ApiError } from "./errors";
 
 const delay = (ms = 220) => new Promise((r) => setTimeout(r, ms));
 
@@ -25,15 +26,21 @@ const viewEvent: Record<SecretKind, AuditEventType> = {
 };
 
 export const api = {
-  /** POST /api/auth/login -> { next: "totp" } ; never reveals which part was wrong. */
-  async login(username: string, password: string): Promise<{ next: "totp" }> {
+  /** POST /api/auth/login -> pending_totp session ; never reveals which part was wrong. */
+  async login(username: string, password: string): Promise<{ setupIncomplete: boolean }> {
+    if (!MOCK_AUTH)
+      return { setupIncomplete: (await auth.login(username.trim(), password)).setupIncomplete };
     await delay(500);
     if (!username.trim() || password.length < 1) throw new ApiError("שם המשתמש או הסיסמה שגויים");
-    return { next: "totp" };
+    return { setupIncomplete: false };
   },
 
   /** POST /api/auth/totp -> sets the session cookie. Prototype accepts any 6 digits. */
   async verifyTotp(code: string): Promise<void> {
+    if (!MOCK_AUTH) {
+      await auth.totp(code);
+      return;
+    }
     await delay(500);
     if (!/^\d{6}$/.test(code)) throw new ApiError("קוד האימות שגוי או שפג תוקפו");
     vault.log("LOGIN_SUCCESS");
@@ -41,8 +48,12 @@ export const api = {
 
   /** POST /api/auth/recovery -> single-use recovery code instead of TOTP. */
   async verifyRecoveryCode(code: string): Promise<void> {
+    if (!MOCK_AUTH) {
+      await auth.recovery(code.trim());
+      return;
+    }
     await delay(500);
-    if (!/^[A-Z0-9]{4}-[A-Z0-9]{4}$/i.test(code.trim())) throw new ApiError("קוד השחזור אינו תקין");
+    if (!/^[A-Z0-9]{5}-[A-Z0-9]{5}$/i.test(code.trim())) throw new ApiError("קוד השחזור אינו תקין");
   },
 
   /** POST /api/secrets/:kind/:id/reveal — audited server-side. */
@@ -70,13 +81,10 @@ export const api = {
   },
 
   async logout(): Promise<void> {
+    if (!MOCK_AUTH) return auth.logout().catch(() => undefined);
     await delay(100);
     vault.log("LOGOUT");
   },
 };
 
-export class ApiError extends Error {
-  constructor(public readonly userMessage: string) {
-    super(userMessage);
-  }
-}
+export { ApiError };

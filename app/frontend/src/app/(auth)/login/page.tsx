@@ -1,9 +1,10 @@
 "use client";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Eye, EyeOff, KeyRound, Lock, TimerOff, User } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
+import { MOCK_AUTH } from "@/lib/auth-client";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
@@ -12,7 +13,7 @@ import { Logo } from "@/components/vault/logo";
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const { passwordAccepted } = useSession();
+  const { passwordAccepted, setupRequired, stage } = useSession();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
@@ -20,16 +21,23 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
   const reason = params.get("reason");
 
+  useEffect(() => {
+    // First launch has no account to log into: go straight to setup. Already unlocked: go in.
+    if (setupRequired) router.replace("/setup");
+    else if (stage === "unlocked") router.replace("/");
+  }, [setupRequired, stage, router]);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setBusy(true);
     try {
-      await api.login(username, password);
+      const { setupIncomplete } = await api.login(username, password);
       // Never keep the password in memory longer than the request.
       setPassword("");
       passwordAccepted(username.trim());
-      router.push("/login/verify");
+      // An account whose authenticator was never confirmed resumes setup instead.
+      router.push(setupIncomplete ? "/setup?resume=1" : "/login/verify");
     } catch (err) {
       setError(err instanceof ApiError ? err.userMessage : "שגיאה בהתחברות");
     } finally {
@@ -106,13 +114,15 @@ function LoginForm() {
         </Button>
       </form>
 
-      <div className="mt-8 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 text-xs leading-relaxed text-slate-500">
-        <strong className="text-slate-300">אב־טיפוס:</strong> כל שם משתמש וסיסמה יתקבלו, וכל קוד בן
-        6 ספרות בשלב הבא. כל הנתונים בממשק הם נתוני דוגמה.{" "}
-        <Link href="/setup" className="text-brand-300 underline-offset-4 hover:underline">
-          צפייה במסך ההגדרה הראשונית
-        </Link>
-      </div>
+      {MOCK_AUTH ? (
+        <div className="mt-8 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 text-xs leading-relaxed text-slate-500">
+          <strong className="text-slate-300">גרסת הדגמה:</strong> כל שם משתמש וסיסמה יתקבלו, וכל קוד
+          בן 6 ספרות בשלב הבא. כל הנתונים בממשק הם נתוני דוגמה.{" "}
+          <Link href="/setup" className="text-brand-300 underline-offset-4 hover:underline">
+            צפייה במסך ההגדרה הראשונית
+          </Link>
+        </div>
+      ) : null}
     </>
   );
 }

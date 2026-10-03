@@ -4,11 +4,12 @@ A self-hosted, Hebrew-first (RTL) personal vault for website passwords, network/
 credentials, flexible private records, payment cards and documents. Dockerized and portable:
 everything lives in one directory so it can move from a VPS to a Proxmox VM or LXC.
 
-> **Status: phase 1 — UI prototype.** The interface runs on **mock data** with simulated
-> login (any username/password, any 6-digit code). The database schema, encryption service,
-> config validation and full Docker stack are real and tested; authentication and the data
-> API come next (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#development-phases)).
-> **Do not store real secrets yet.**
+> **Status: phase 2 — authentication is real, vault data is still mock.** Setup, login
+> (Argon2id + TOTP + recovery codes), sessions, CSRF, brute-force protection and the audit log
+> run against PostgreSQL. The passwords, network, records, cards and documents screens still show
+> **mock data** until the items API lands (phase 3, see
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#development-phases)). **Do not store real secrets yet.**
+> `npm run dev:mock` (frontend) runs the old no-backend demo where any password is accepted.
 
 | Dashboard | Passwords (one revealed) |
 |---|---|
@@ -87,10 +88,12 @@ never published). Network `private_vault_network` is internal-only.
 
 ## First startup
 
-On first launch the API applies migrations automatically. In the finished product the UI then
-redirects to **/setup**: create the single master account (username + strong password, stored
-as an Argon2id hash), connect an authenticator app, confirm the first code, and save the
-recovery codes. In this prototype you can preview that flow at `/setup`.
+The API applies migrations automatically. Open the site: with no account yet it goes to
+**/setup**. Enter the `SETUP_TOKEN` from your `.env` (this stops a stranger who reaches the URL
+first from becoming the owner), choose the single master account (username + strong password,
+stored as an Argon2id hash), scan the QR code, confirm the first 6-digit code, and save the 10
+recovery codes, which are shown once. If you close the page midway, log in with your password and
+setup resumes.
 
 ## 2FA setup
 

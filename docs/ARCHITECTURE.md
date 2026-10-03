@@ -159,10 +159,42 @@ logged (nginx logs `$uri` without the query string; the API logger redacts bodie
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Architecture, structure, Docker, schema, encryption + env core, **UI prototype on mock data** | this PR |
-| 2 | Auth: setup, Argon2id, TOTP + QR, recovery codes, sessions, CSRF, rate limiting, lockout | next |
+| 1 | Architecture, structure, Docker, schema, encryption + env core, **UI prototype on mock data** | done (PR #1) |
+| 2 | Auth: setup, Argon2id, TOTP + QR, recovery codes, sessions, CSRF, rate limiting, lockout | this PR |
 | 3 | Items API per section, wiring `lib/api.ts` to it, audit writer | |
 | 4 | Encrypted file storage + authenticated preview | |
 | 5 | Trash purge job, export/import `.vault`, key rotation job | |
 | 6 | `scripts/backup.sh` / `restore.sh`, retention 7/4/6, backup dashboard API | |
 | 7 | Tests (unit + API + Playwright), security review, fix-all | |
+
+## Authentication (phase 2)
+
+`src/modules/auth`: `routes.ts` (HTTP), `sessions.ts`, `passwords.ts` (Argon2id 64 MiB/t=3, at most
+2 derivations at once), `totp.ts` (RFC 6238, tested against RFC 4226 vectors), `rate-limit.ts`, `audit.ts`.
+
+* **First launch**: `POST /api/auth/setup` works only while no user exists (a unique index on
+  `users((true))` makes a second account impossible even under a race) and, in production, only
+  with `SETUP_TOKEN`. The TOTP secret is generated server-side and stored encrypted with
+  `TOTP_ENCRYPTION_KEY`; 2FA is active only after `POST /api/auth/setup/verify` accepts a code.
+* **Login** is two steps. A correct password issues a `pending_totp` session (10 minutes) that
+  grants nothing; a correct code (or one recovery code) replaces it with a new `active` session.
+  Every promotion revokes the old session and issues a new cookie (no fixation).
+* **TOTP replay**: the accepted time step is stored and claimed atomically, so a code works once.
+* **Cookies**: `__Host-` prefix when secure, `HttpOnly`, `SameSite=Strict`, opaque 256-bit token,
+  stored as SHA-256 only. Idle timeout (default 15 min) and absolute expiry (default 12 h) are
+  enforced on every request.
+* **CSRF**: writes need the exact `APP_ORIGIN`, JSON content type and, with a session, an
+  `X-CSRF-Token` that is an HMAC of the session id under `SESSION_SECRET`.
+* **Brute force**: after 5 failures (per IP and per username, counted since the last success) each
+  further attempt waits 30 s, doubling to a 15 min cap, so the owner is never locked out for good.
+  Five wrong second-factor codes also destroy the half-authenticated session. nginx adds its own
+  rate limit on `/api/auth/`.
+* **Lock vault** = server logout; unlocking is a full login again.
+* **Audit**: `LOGIN_SUCCESS`, `LOGIN_FAILED`, `LOGOUT`, `2FA_CHANGED`, `SESSION_REVOKED`, with IP and
+  user agent; fixed labels only, never secrets (a test asserts the passwords, TOTP secret and
+  recovery codes never appear).
+* **Known limit**: a username-scoped delay means someone who knows the username can slow the
+  owner's login by up to 15 minutes. That is the price of never locking out permanently.
+
+Tests: `TEST_DATABASE_URL=postgres://… npm test` in `app/backend` runs the integration suite against
+an empty throwaway database (it is wiped); without the variable those tests are skipped.

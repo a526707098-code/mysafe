@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Prototype session state. In production the session lives in an HttpOnly
- * cookie the browser cannot read; this provider only mirrors "am I unlocked"
- * for routing and owns the idle auto-lock timer. sessionStorage holds a single
- * non-secret flag so a page refresh in the prototype does not force a re-login.
+ * Session state. The session lives in an HttpOnly cookie the browser cannot
+ * read; this provider mirrors the server's answer to "what stage am I in" for
+ * routing and owns the idle auto-lock timer. The demo build (NEXT_PUBLIC_MOCK_AUTH=1)
+ * instead keeps one non-secret flag in sessionStorage.
  */
 import {
   createContext,
@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation";
 import { vault } from "./vault-store";
 import { api } from "./api";
 import { clearClipboardNow } from "./clipboard";
+import { auth, MOCK_AUTH } from "./auth-client";
 
 type Stage = "loading" | "locked" | "awaiting-totp" | "unlocked";
 
@@ -27,6 +28,10 @@ interface SessionValue {
   username: string;
   idleMinutes: number;
   setIdleMinutes: (m: number) => void;
+  /** First launch: no account exists yet (live mode). */
+  setupRequired: boolean;
+  /** Re-reads the server session; call after login steps that change it. */
+  refresh: () => Promise<void>;
   passwordAccepted: (username: string) => void;
   totpAccepted: () => void;
   lock: (reason?: "manual" | "idle") => void;
@@ -60,22 +65,48 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [stage, setStage] = useState<Stage>("loading");
   const [username, setUsername] = useState("");
   const [idleMinutes, setIdleState] = useState(15);
+  const [setupRequired, setSetupRequired] = useState(false);
   const lockAt = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const lastBump = useRef(0);
 
+  const refresh = useCallback(async () => {
+    if (MOCK_AUTH) return;
+    try {
+      const st = await auth.state();
+      setSetupRequired(st.setupRequired);
+      setUsername(st.username ?? "");
+      if (st.idleMinutes) setIdleState(st.idleMinutes);
+      setStage(
+        st.stage === "active"
+          ? "unlocked"
+          : st.stage === "pending_totp"
+            ? "awaiting-totp"
+            : "locked",
+      );
+    } catch {
+      // Server unreachable: stay locked. Never fail open.
+      setStage("locked");
+    }
+  }, []);
+
+  /* eslint-disable react-hooks/set-state-in-effect -- hydration from the server / client-only storage */
   useEffect(() => {
-    // Hydrate from sessionStorage once on mount (client only).
+    if (!MOCK_AUTH) {
+      // The cookie is HttpOnly: ask the server what state this browser is in.
+      void refresh();
+      return;
+    }
+    // Demo build: hydrate from sessionStorage once on mount (client only).
     const saved = readStorage(FLAG);
     const idle = Number(readStorage(IDLE));
-    /* eslint-disable react-hooks/set-state-in-effect -- one-time hydration of client-only storage */
     if (idle >= 1 && idle <= 240) setIdleState(idle);
     setUsername(readStorage(USER) ?? "");
     setStage(
       saved === "unlocked" ? "unlocked" : saved === "awaiting-totp" ? "awaiting-totp" : "locked",
     );
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, []);
+  }, [refresh]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const lock = useCallback(
     (reason: "manual" | "idle" = "manual") => {
@@ -119,6 +150,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       stage,
       username,
       idleMinutes,
+      setupRequired,
+      refresh,
       getLockAt: () => lockAt.current,
       setIdleMinutes: (m) => {
         setIdleState(m);
@@ -126,17 +159,20 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       },
       passwordAccepted: (u) => {
         setUsername(u);
-        writeStorage(USER, u);
-        writeStorage(FLAG, "awaiting-totp");
+        if (MOCK_AUTH) {
+          writeStorage(USER, u);
+          writeStorage(FLAG, "awaiting-totp");
+        }
         setStage("awaiting-totp");
       },
       totpAccepted: () => {
-        writeStorage(FLAG, "unlocked");
+        if (MOCK_AUTH) writeStorage(FLAG, "unlocked");
         setStage("unlocked");
+        void refresh();
       },
       lock,
     }),
-    [stage, username, idleMinutes, lock],
+    [stage, username, idleMinutes, setupRequired, refresh, lock],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
