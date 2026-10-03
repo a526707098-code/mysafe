@@ -1,0 +1,109 @@
+# PRIVATE VAULT
+# Everything stateful lives under this directory (database/data, uploads,
+# backups), so the whole stack moves to another host or a Proxmox VM/LXC by
+# copying the directory plus .env. See docs/MIGRATION.md.
+
+name: private-vault
+
+services:
+  private-vault-db:
+    image: postgres:17-alpine
+    container_name: private-vault-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-vault_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?set POSTGRES_ADMIN_PASSWORD in .env}
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+      VAULT_DB_NAME: ${POSTGRES_DB:-private_vault}
+      VAULT_DB_USER: ${POSTGRES_USER:-private_vault_user}
+      VAULT_DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - ./database/data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    networks: [private_vault_network]
+    # No "ports": PostgreSQL is never published, not even on localhost.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt: ["no-new-privileges:true"]
+    shm_size: 128m
+
+  private-vault-api:
+    build: ./app/backend
+    image: private-vault-api:local
+    container_name: private-vault-api
+    restart: unless-stopped
+    depends_on:
+      private-vault-db: { condition: service_healthy }
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgres://${POSTGRES_USER:-private_vault_user}:${POSTGRES_PASSWORD}@private-vault-db:5432/${POSTGRES_DB:-private_vault}
+      APP_SECRET: ${APP_SECRET:?set APP_SECRET}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY}
+      ENCRYPTION_KEY_VERSION: ${ENCRYPTION_KEY_VERSION:-1}
+      ENCRYPTION_KEY_PREVIOUS: ${ENCRYPTION_KEY_PREVIOUS:-}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?set TOTP_ENCRYPTION_KEY}
+      APP_ORIGIN: ${APP_ORIGIN:?set APP_ORIGIN}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      SESSION_IDLE_MINUTES: ${SESSION_IDLE_MINUTES:-15}
+      SESSION_ABSOLUTE_HOURS: ${SESSION_ABSOLUTE_HOURS:-12}
+      TRASH_RETENTION_DAYS: ${TRASH_RETENTION_DAYS:-30}
+      UPLOADS_DIR: /data/uploads
+      ALLOW_CVV_STORAGE: ${ALLOW_CVV_STORAGE:-false}
+    volumes:
+      - ./uploads:/data/uploads
+    networks: [private_vault_network]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
+  private-vault-app:
+    build: ./app/frontend
+    image: private-vault-app:local
+    container_name: private-vault-app
+    restart: unless-stopped
+    depends_on:
+      private-vault-api: { condition: service_healthy }
+    networks: [private_vault_network]
+    read_only: true
+    tmpfs: [/tmp, /app/.next/cache]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
+  private-vault-nginx:
+    image: nginxinc/nginx-unprivileged:1.29-alpine
+    container_name: private-vault-nginx
+    restart: unless-stopped
+    depends_on:
+      private-vault-app: { condition: service_healthy }
+    ports:
+      # Bound to localhost by default. For Tailscale use the tailnet IP
+      # (e.g. VAULT_BIND=100.x.y.z) or `tailscale serve`; see docs/HTTPS.md.
+      - "${VAULT_BIND:-127.0.0.1}:${VAULT_PORT:-8080}:8080"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    networks: [private_vault_network, private_vault_edge]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:8080/nginx-health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  # internal: no route to the outside world for db, api and app.
+  private_vault_network:
+    name: private_vault_network
+    internal: true
+  # Only nginx joins this one, so only nginx can publish a port.
+  private_vault_edge:
+    name: private_vault_edge

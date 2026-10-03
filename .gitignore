@@ -1,0 +1,10 @@
+# Secrets and state never go into git.
+.env
+.env.*
+!.env.example
+database/data/
+uploads/*
+!uploads/.gitkeep
+backups/*
+!backups/.gitkeep
+node_modules/
