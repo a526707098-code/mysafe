@@ -91,7 +91,7 @@ export default function SetupPage() {
   const accountOk =
     /^[a-z0-9._-]{3,32}$/i.test(username) && pwErrors.length === 0 && confirm === password;
 
-  const mockUri = `otpauth://totp/PRIVATE%20VAULT:${encodeURIComponent(username || "owner")}?secret=${secret}&issuer=PRIVATE%20VAULT&algorithm=SHA1&digits=6&period=30`;
+  const mockUri = `otpauth://totp/MySafe:${encodeURIComponent(username || "owner")}?secret=${secret}&issuer=MySafe&algorithm=SHA1&digits=6&period=30`;
 
   const steps = [
     { label: "חשבון ראשי", icon: <UserPlus /> },
@@ -336,12 +336,12 @@ export default function SetupPage() {
               variant="secondary"
               className="flex-1"
               onClick={() => {
-                const blob = new Blob([`PRIVATE VAULT recovery codes\n\n${codes.join("\n")}\n`], {
+                const blob = new Blob([`MySafe recovery codes\n\n${codes.join("\n")}\n`], {
                   type: "text/plain",
                 });
                 const a = document.createElement("a");
                 a.href = URL.createObjectURL(blob);
-                a.download = "private-vault-recovery-codes.txt";
+                a.download = "mysafe-recovery-codes.txt";
                 a.click();
                 URL.revokeObjectURL(a.href);
               }}

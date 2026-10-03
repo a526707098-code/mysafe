@@ -12,7 +12,7 @@ import { ToastProvider } from "@/components/ui/toast";
 import { CspNonce } from "@/components/nonce";
 
 export const metadata: Metadata = {
-  title: "PRIVATE VAULT",
+  title: "MySafe",
   description: "הכספת הפרטית שלך",
   robots: { index: false, follow: false },
   referrer: "no-referrer",

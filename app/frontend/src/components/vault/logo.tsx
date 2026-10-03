@@ -1,17 +1,24 @@
-import { ShieldHalf } from "lucide-react";
 import { cn } from "@/lib/cn";
 
+/** Emblem + wordmark. The emblem is the MySafe logo artwork (public/brand). */
 export function Logo({ className, compact }: { className?: string; compact?: boolean }) {
   return (
     <div className={cn("flex items-center gap-3", className)}>
-      <span className="from-brand-400 to-accent-500 relative grid size-10 place-items-center rounded-2xl bg-gradient-to-br via-cyan-500 shadow-lg ring-1 shadow-cyan-500/30 ring-white/25 ring-inset">
-        <span className="absolute inset-x-1 top-0.5 h-1/2 rounded-[inherit] bg-gradient-to-b from-white/50 to-transparent opacity-50" />
-        <ShieldHalf className="text-ink-950 relative size-5" strokeWidth={2.4} />
-      </span>
+      {/* eslint-disable-next-line @next/next/no-img-element -- small static brand asset, no optimisation needed */}
+      <img
+        src="/brand/mysafe-mark.png"
+        alt={compact ? "MySafe" : ""}
+        width={44}
+        height={44}
+        className="size-11 shrink-0 drop-shadow-[0_6px_16px_rgb(34_211_238/0.35)]"
+      />
       {compact ? null : (
         <div className="leading-tight">
-          <div className="ltr text-[15px] font-extrabold tracking-[0.18em] text-white">
-            PRIVATE VAULT
+          <div className="ltr text-xl font-extrabold tracking-wide text-white">
+            My
+            <span className="from-brand-300 to-accent-400 bg-gradient-to-l bg-clip-text text-transparent">
+              Safe
+            </span>
           </div>
           <div className="text-[11px] text-slate-500">הכספת הפרטית שלך</div>
         </div>

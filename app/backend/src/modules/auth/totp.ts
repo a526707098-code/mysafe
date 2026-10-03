@@ -77,7 +77,7 @@ export function verifyTotp(
   return matched;
 }
 
-export function otpauthUri(secretB32: string, account: string, issuer = "Private Vault"): string {
+export function otpauthUri(secretB32: string, account: string, issuer = "MySafe"): string {
   const label = `${encodeURIComponent(issuer)}:${encodeURIComponent(account)}`;
   const q = new URLSearchParams({
     secret: secretB32,
