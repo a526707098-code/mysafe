@@ -247,7 +247,7 @@ export default function DashboardPage() {
               />{" "}
               גיבוי:{" "}
               <strong className={lastBackupFailed ? "text-rose-300" : "text-emerald-300"}>
-                {lastBackupFailed ? "נכשל" : "תקין"}
+                {lastBackupFailed ? "נכשל" : lastBackup ? "תקין" : "לא הוגדר"}
               </strong>
             </span>
           </div>

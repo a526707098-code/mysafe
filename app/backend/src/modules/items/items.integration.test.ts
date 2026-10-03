@@ -129,6 +129,9 @@ test(
     assert.equal(c.raw.includes(SECRET_PW), false, "create response has no secret");
     assert.equal(c.json.notes, "recovery phone ends 4455", "detail carries decrypted notes");
 
+    const withNotes = await call("GET", "/api/items?kind=password&withNotes=true");
+    assert.equal(withNotes.json.items[0].notes, "recovery phone ends 4455");
+    assert.equal(withNotes.raw.includes(SECRET_PW), false);
     const list = await call("GET", "/api/items?kind=password");
     assert.equal(list.json.items.length, 1);
     assert.equal(list.raw.includes(SECRET_PW), false);
@@ -245,6 +248,9 @@ test(
       "08/29",
     );
     assert.equal((await audit("CARD_REVEALED")).length, 2);
+    const both = await call("POST", `/api/items/${cardId}/reveal`, { field: "card" });
+    assert.equal(both.json.value, `${CARD}|08/29`);
+    assert.equal((await audit("CARD_REVEALED")).length, 3, "one event for the combined reveal");
     const cvv = await call("POST", "/api/items/card", { title: "c2", number: CARD, cvv: "123" });
     assert.equal(cvv.status, 422, "CVV storage is off by default");
     assert.equal((await call("POST", `/api/items/${cardId}/reveal`, { field: "cvv" })).status, 404);

@@ -2,7 +2,7 @@
 import { Suspense, useRef, useState } from "react";
 import { FileText, Lock, Paperclip, Plus, Shield, Trash2 } from "lucide-react";
 import { useVault, vault } from "@/lib/vault-store";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
 import { ACCEPT, validateUpload } from "@/lib/upload";
 import { cn } from "@/lib/cn";
@@ -227,19 +227,23 @@ function RecordForm({ item, onClose }: { item: RecordItem | null; onClose: () =>
           variant="primary"
           disabled={!valid}
           onClick={async () => {
-            for (const f of fields)
-              if (f.sensitive && f.secret) await api.storeSecret(f.id, f.secret);
-            vault.upsert({
-              ...r,
-              fields: fields.map<CustomField>((f) => ({
-                id: f.id,
-                name: f.name,
-                sensitive: f.sensitive,
-                value: f.sensitive ? undefined : f.value,
-              })),
-            });
-            toast(item ? "הרישום עודכן" : "הרישום נשמר");
-            onClose();
+            try {
+              for (const f of fields)
+                if (f.sensitive && f.secret) await api.storeSecret(f.id, f.secret);
+              await vault.save({
+                ...r,
+                fields: fields.map<CustomField>((f) => ({
+                  id: f.id,
+                  name: f.name,
+                  sensitive: f.sensitive,
+                  value: f.sensitive ? undefined : f.value,
+                })),
+              });
+              toast(item ? "הרישום עודכן" : "הרישום נשמר");
+              onClose();
+            } catch (e) {
+              toast(e instanceof ApiError ? e.userMessage : "השמירה נכשלה", "error");
+            }
           }}
         >
           שמירה

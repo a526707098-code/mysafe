@@ -161,7 +161,7 @@ logged (nginx logs `$uri` without the query string; the API logger redacts bodie
 |---|---|---|
 | 1 | Architecture, structure, Docker, schema, encryption + env core, **UI prototype on mock data** | done (PR #1) |
 | 2 | Auth: setup, Argon2id, TOTP + QR, recovery codes, sessions, CSRF, rate limiting, lockout | this PR |
-| 3 | Items API per section, wiring `lib/api.ts` to it, audit writer | |
+| 3 | Items API per section (passwords, network, records, cards), categories, tags, trash, search, audit writer, UI wired to it | this PR |
 | 4 | Encrypted file storage + authenticated preview | |
 | 5 | Trash purge job, export/import `.vault`, key rotation job | |
 | 6 | `scripts/backup.sh` / `restore.sh`, retention 7/4/6, backup dashboard API | |
@@ -198,3 +198,32 @@ logged (nginx logs `$uri` without the query string; the API logger redacts bodie
 
 Tests: `TEST_DATABASE_URL=postgres://… npm test` in `app/backend` runs the integration suite against
 an empty throwaway database (it is wiped); without the variable those tests are skipped.
+
+## Items API (phase 3)
+
+`src/modules/items`: `schemas.ts` (Zod, strict), `service.ts` (SQL + encryption), `routes.ts`.
+Documents (files) are phase 4 and have no endpoints yet.
+
+* **Lists and details never contain secrets.** They carry flags such as `hasNotes`, `hasPassword`
+  and, for cards, only `last4`. `GET /api/items?withNotes=true` and `GET /api/items/:id` also
+  decrypt the notes for display.
+* **Secrets are fetched one at a time**: `POST /api/items/:id/reveal` with
+  `{field, purpose: "view"|"copy"}`. `field` is `password`, `number`, `expiry`, `cvv`, `notes`,
+  `field:<uuid>` (custom field) or `card` (number and expiry in one call). The audit event
+  (`PASSWORD_VIEWED`, `PASSWORD_COPIED`, `CARD_REVEALED`) is written before the value is returned.
+* **Encryption**: every secret goes through `EncryptionService` with the row id in the AAD, so a
+  ciphertext copied to another row fails to decrypt (tested).
+* **Server-derived values**: `last4` and password `strength` are computed from the submitted secret;
+  the client cannot send them. CVV is refused unless `ALLOW_CVV_STORAGE=true`.
+* **Validation**: URLs must be http(s) (a stored `javascript:` link would be XSS), IPs and MACs are
+  parsed, unknown fields are rejected, and error responses list field names only.
+* **Updates are partial**: an omitted secret keeps its stored value; a custom field sent without
+  `value` keeps its ciphertext; the kind of an item cannot change.
+* **Trash**: `DELETE /api/items/:id` is a soft delete; `POST /api/trash/:id/restore`,
+  `DELETE /api/trash/:id` (only for items already in the trash). An hourly job purges items older
+  than `TRASH_RETENTION_DAYS`.
+* **Search** (`GET /api/search?q=`) covers titles, usernames, URLs, hostnames, IPs, MACs, locations,
+  holder/issuer/last4, category and tag names and non-sensitive custom fields. Passwords, notes
+  and sensitive fields are encrypted and therefore not searchable. `%` and `_` are literal. The
+  logger records the path only, so search terms never reach a log file.
+* **Also**: categories CRUD, tags (created implicitly, removed when unused), favorites, `GET /api/audit`.

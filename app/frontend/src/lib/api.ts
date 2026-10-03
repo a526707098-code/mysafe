@@ -6,9 +6,10 @@
  * the vault data below still resolves against mock data until phase 3.
  */
 import { mockSecrets } from "./mock-data";
-import { vault } from "./vault-store";
+import { getVault, vault } from "./vault-store";
 import type { AuditEventType } from "./types";
 import { auth, MOCK_AUTH } from "./auth-client";
+import { live, stageSecret } from "./live";
 import { ApiError } from "./errors";
 
 const delay = (ms = 220) => new Promise((r) => setTimeout(r, ms));
@@ -24,6 +25,23 @@ const viewEvent: Record<SecretKind, AuditEventType> = {
   field: "PASSWORD_VIEWED",
   card: "CARD_REVEALED",
 };
+
+/** Maps the UI's (kind, id) to the server's (item id, field) and decrypts that one value. */
+async function liveReveal(kind: SecretKind, id: string, purpose: "view" | "copy"): Promise<string> {
+  try {
+    if (kind === "field") {
+      const owner = getVault().records.find((r) => r.fields.some((f) => f.id === id));
+      if (!owner) throw new ApiError("לא ניתן לפענח את הערך");
+      return await live.reveal(owner.id, `field:${id}`, purpose);
+    }
+    const v = await live.reveal(id, kind === "card" ? "card" : "password", purpose);
+    if (kind !== "card") return v;
+    const [number = "", expiry = ""] = v.split("|");
+    return `${number.replace(/(.{4})/g, "$1 ").trim()}|${expiry}`;
+  } catch (e) {
+    throw e instanceof ApiError ? e : new ApiError("לא ניתן לפענח את הערך");
+  }
+}
 
 export const api = {
   /** POST /api/auth/login -> pending_totp session ; never reveals which part was wrong. */
@@ -58,6 +76,7 @@ export const api = {
 
   /** POST /api/secrets/:kind/:id/reveal — audited server-side. */
   async revealSecret(kind: SecretKind, id: string, label: string): Promise<string> {
+    if (!MOCK_AUTH) return liveReveal(kind, id, "view");
     await delay();
     const value = sessionSecrets.get(id) ?? mockSecrets[id];
     if (value === undefined) throw new ApiError("לא ניתן לפענח את הערך");
@@ -67,6 +86,7 @@ export const api = {
 
   /** Copy goes through the same reveal endpoint with ?purpose=copy for a distinct audit event. */
   async copySecret(kind: SecretKind, id: string, label: string): Promise<string> {
+    if (!MOCK_AUTH) return liveReveal(kind, id, "copy");
     await delay(120);
     const value = sessionSecrets.get(id) ?? mockSecrets[id];
     if (value === undefined) throw new ApiError("לא ניתן לפענח את הערך");
@@ -76,6 +96,7 @@ export const api = {
 
   /** Part of POST/PUT on the item: the secret travels once and is encrypted server-side. */
   async storeSecret(id: string, value: string): Promise<void> {
+    if (!MOCK_AUTH) return stageSecret(id, value); // sent with the save request
     await delay(80);
     sessionSecrets.set(id, value);
   },

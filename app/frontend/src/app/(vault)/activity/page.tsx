@@ -98,6 +98,24 @@ const EVENT: Record<
     tone: "text-rose-300 bg-rose-500/10",
     group: "data",
   },
+  RECORD_RESTORED: {
+    label: "רשומה שוחזרה",
+    icon: PencilLine,
+    tone: "text-emerald-300 bg-emerald-500/10",
+    group: "data",
+  },
+  RECORD_PURGED: {
+    label: "רשומה נמחקה לצמיתות",
+    icon: FileX2,
+    tone: "text-rose-300 bg-rose-500/10",
+    group: "data",
+  },
+  SESSION_REVOKED: {
+    label: "סשן נותק",
+    icon: ShieldAlert,
+    tone: "text-amber-300 bg-amber-500/10",
+    group: "auth",
+  },
   FILE_UPLOADED: {
     label: "קובץ הועלה",
     icon: FileUp,

@@ -139,6 +139,8 @@ export interface ListFilter {
   q?: string;
   trash?: boolean;
   limit?: number;
+  /** Decrypt and include notes (detail views). Lists omit them by default. */
+  withNotes?: boolean;
 }
 
 export async function listItems(d: Deps, f: ListFilter = {}): Promise<Json[]> {
@@ -191,7 +193,20 @@ export async function listItems(d: Deps, f: ListFilter = {}): Promise<Json[]> {
     d.pool,
     rows.filter((r) => r.kind === "record").map((r) => r.id),
   );
-  return rows.map((r) => toDto(r, fields.get(r.id)));
+  const dtos = rows.map((r) => toDto(r, fields.get(r.id)));
+  if (f.withNotes) {
+    const ids = rows.filter((r) => r.has_notes).map((r) => r.id);
+    const notes = await d.pool.query<{ id: string; notes_enc: Buffer }>(
+      "SELECT id, notes_enc FROM items WHERE id = ANY($1::uuid[])",
+      [ids],
+    );
+    const byId = new Map(notes.rows.map((n) => [n.id, n.notes_enc]));
+    for (const dto of dtos) {
+      const e = byId.get(dto.id as string);
+      if (e) dto.notes = d.enc.decryptString(e, ctx("items", "notes", dto.id as string));
+    }
+  }
+  return dtos;
 }
 
 async function getRow(db: Pool | PoolClient, id: string, includeDeleted = false) {
@@ -520,6 +535,18 @@ export async function revealSecret(
       id,
       "PASSWORD",
     );
+  if (row.kind === "card" && field === "card") {
+    // Number and expiry in one call (one audit event) for the card face.
+    const r = await d.pool.query<{ n: Buffer; e: Buffer | null }>(
+      "SELECT number_enc AS n, expiry_enc AS e FROM card_items WHERE item_id = $1",
+      [id],
+    );
+    const c = r.rows[0];
+    if (!c) throw notFound();
+    const number = d.enc.decryptString(c.n, ctx("card_items", "number", id));
+    const expiry = c.e ? d.enc.decryptString(c.e, ctx("card_items", "expiry", id)) : "";
+    return { value: `${number}|${expiry}`, event: "CARD", title: row.title };
+  }
   if (row.kind === "card" && (field === "number" || field === "expiry" || field === "cvv")) {
     const col = `${field}_enc`;
     return pick(

@@ -16,7 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useVault, vault } from "@/lib/vault-store";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { DEVICE_TYPES, type DeviceType, type NetworkItem } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -238,10 +238,14 @@ function NetworkForm({ item, onClose }: { item: NetworkItem | null; onClose: () 
           variant="primary"
           disabled={!valid}
           onClick={async () => {
-            if (password) await api.storeSecret(d.id, password);
-            vault.upsert(d);
-            toast(item ? "המכשיר עודכן" : "המכשיר נוסף");
-            onClose();
+            try {
+              if (password) await api.storeSecret(d.id, password);
+              await vault.save(d);
+              toast(item ? "המכשיר עודכן" : "המכשיר נוסף");
+              onClose();
+            } catch (e) {
+              toast(e instanceof ApiError ? e.userMessage : "השמירה נכשלה", "error");
+            }
           }}
         >
           שמירה

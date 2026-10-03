@@ -8,6 +8,9 @@
  */
 import { useSyncExternalStore } from "react";
 import * as mock from "./mock-data";
+import { MOCK_AUTH } from "./auth-client";
+import { ApiError } from "./errors";
+import { fetchSnapshot, isServerId, live, saveItem } from "./live";
 import type {
   AuditEvent,
   AuditEventType,
@@ -55,6 +58,7 @@ const empty: VaultState = {
 };
 
 let state: VaultState = empty;
+let loading = false;
 const listeners = new Set<() => void>();
 
 function set(next: Partial<VaultState>) {
@@ -92,7 +96,8 @@ const kindToList: Record<VaultItem["kind"], ItemListKey> = {
 
 export const vault = {
   load() {
-    if (state.loaded) return;
+    if (state.loaded || loading) return;
+    if (!MOCK_AUTH) return void vault.refresh();
     set({
       loaded: true,
       passwords: structuredClone(mock.passwords),
@@ -109,6 +114,62 @@ export const vault = {
     });
   },
 
+  /** Live mode: (re)read everything from the server. Also the way failed optimistic edits are undone. */
+  async refresh() {
+    loading = true;
+    try {
+      const snap = await fetchSnapshot();
+      const by = (k: VaultItem["kind"]) => snap.items.filter((i) => i.kind === k);
+      set({
+        loaded: true,
+        passwords: by("password") as PasswordItem[],
+        network: by("network") as NetworkItem[],
+        records: by("record") as RecordItem[],
+        cards: by("card") as CardItem[],
+        // Encrypted file storage arrives in phase 4; backups in phase 6.
+        documents: [],
+        backups: [],
+        categories: snap.categories,
+        tags: snap.tags,
+        trash: snap.trash,
+        audit: snap.audit,
+        sessions: snap.sessions,
+      });
+    } catch (e) {
+      // An expired server session means the vault must lock; anything else shows an empty vault.
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        window.location.replace("/login?reason=idle");
+      } else set({ loaded: true });
+    } finally {
+      loading = false;
+    }
+  },
+
+  /** Save an item (live: POST/PUT; demo: local). Resolves to the stored item; rejects with ApiError. */
+  async save<T extends VaultItem>(item: T): Promise<VaultItem> {
+    if (MOCK_AUTH) return vault.upsert(item);
+    const list = state[kindToList[item.kind]] as VaultItem[];
+    const saved = await saveItem(item, isServerId(item.id) && list.some((i) => i.id === item.id));
+    const key = kindToList[saved.kind];
+    const cur = state[key] as VaultItem[];
+    const exists = cur.some((i) => i.id === saved.id);
+    set({
+      [key]: exists ? cur.map((i) => (i.id === saved.id ? saved : i)) : [saved, ...cur],
+    } as Partial<VaultState>);
+    void vault.refreshAuxiliary();
+    return saved;
+  },
+
+  /** Tags and the audit trail change as a side effect of saving. */
+  async refreshAuxiliary() {
+    try {
+      const snap = await fetchSnapshot();
+      set({ tags: snap.tags, audit: snap.audit, trash: snap.trash });
+    } catch {
+      /* non-critical */
+    }
+  },
+
   /** Lock: drop everything cached in memory. */
   clear() {
     state = empty;
@@ -116,6 +177,7 @@ export const vault = {
   },
 
   log(type: AuditEventType, recordRef?: string) {
+    if (!MOCK_AUTH) return; // the server writes the real audit trail
     const event: AuditEvent = {
       id: nextId("a"),
       at: now(),
@@ -129,6 +191,8 @@ export const vault = {
   },
 
   toggleFavorite(item: VaultItem) {
+    if (!MOCK_AUTH && isServerId(item.id))
+      void live.favorite(item.id, !item.favorite).catch(() => vault.refresh());
     const key = kindToList[item.kind];
     const list = state[key] as VaultItem[];
     set({
@@ -152,6 +216,13 @@ export const vault = {
 
   /** Soft delete: the item moves to Trash for the configured retention. */
   remove(item: VaultItem) {
+    if (!MOCK_AUTH) {
+      void live
+        .remove(item.id)
+        .then(() => vault.refresh())
+        .catch(() => vault.refresh());
+      return;
+    }
     const key = kindToList[item.kind];
     const list = state[key] as VaultItem[];
     const retentionDays = 30;
@@ -170,22 +241,36 @@ export const vault = {
   },
 
   restore(id: string) {
+    if (!MOCK_AUTH) {
+      void live.restore(id).finally(() => vault.refresh());
+      return;
+    }
     set({ trash: state.trash.filter((t) => t.id !== id) });
   },
 
   purge(id: string) {
+    if (!MOCK_AUTH) {
+      void live.purge(id).finally(() => vault.refresh());
+      return;
+    }
     set({ trash: state.trash.filter((t) => t.id !== id) });
   },
 
   revokeSession(id: string) {
+    if (!MOCK_AUTH) void live.revokeSession(id).finally(() => vault.refresh());
     set({ sessions: state.sessions.filter((s) => s.id !== id || s.current) });
   },
 
   revokeOtherSessions() {
+    if (!MOCK_AUTH) void live.revokeOthers().finally(() => vault.refresh());
     set({ sessions: state.sessions.filter((s) => s.current) });
   },
 
   upsertCategory(cat: Category) {
+    if (!MOCK_AUTH) {
+      void live.saveCategory(cat).finally(() => vault.refresh());
+      return;
+    }
     const exists = state.categories.some((c) => c.id === cat.id);
     set({
       categories: exists
@@ -195,10 +280,15 @@ export const vault = {
   },
 
   removeCategory(id: string) {
+    if (!MOCK_AUTH) {
+      void live.removeCategory(id).finally(() => vault.refresh());
+      return;
+    }
     set({ categories: state.categories.filter((c) => c.id !== id) });
   },
 
   async runBackup() {
+    if (!MOCK_AUTH) return; // scripts/backup.sh and its API arrive in phase 6
     const run: BackupRun = {
       id: nextId("b"),
       startedAt: now(),

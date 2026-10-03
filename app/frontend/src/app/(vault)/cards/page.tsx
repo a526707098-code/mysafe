@@ -14,7 +14,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useVault, vault } from "@/lib/vault-store";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { maskedCard } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type { CardBrand, CardItem } from "@/lib/types";
@@ -300,19 +300,23 @@ function CardForm({ item, onClose }: { item: CardItem | null; onClose: () => voi
           variant="primary"
           disabled={!valid}
           onClick={async () => {
-            const next = { ...c };
-            if (number) {
-              const digits = number.replace(/\D/g, "");
-              next.last4 = digits.slice(-4);
-              await api.storeSecret(
-                next.id,
-                `${digits.replace(/(.{4})/g, "$1 ").trim()}|${expiry}`,
-              );
+            try {
+              const next = { ...c };
+              if (number) {
+                const digits = number.replace(/\D/g, "");
+                next.last4 = digits.slice(-4);
+                await api.storeSecret(
+                  next.id,
+                  `${digits.replace(/(.{4})/g, "$1 ").trim()}|${expiry}`,
+                );
+              }
+              await vault.save(next);
+              setNumber("");
+              toast(item ? "הכרטיס עודכן" : "הכרטיס נשמר");
+              onClose();
+            } catch (e) {
+              toast(e instanceof ApiError ? e.userMessage : "השמירה נכשלה", "error");
             }
-            vault.upsert(next);
-            setNumber("");
-            toast(item ? "הכרטיס עודכן" : "הכרטיס נשמר");
-            onClose();
           }}
         >
           שמירה

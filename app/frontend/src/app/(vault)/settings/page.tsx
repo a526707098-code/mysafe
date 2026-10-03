@@ -369,7 +369,14 @@ function BackupTab() {
           },
           {
             label: "סטטוס",
-            value: backups[0]?.status === "failed" ? "נכשל" : running ? "רץ..." : "תקין",
+            value:
+              backups[0]?.status === "failed"
+                ? "נכשל"
+                : running
+                  ? "רץ..."
+                  : last
+                    ? "תקין"
+                    : "לא הוגדר",
             icon: backups[0]?.status === "failed" ? <XCircle /> : <CheckCircle2 />,
             tone: (backups[0]?.status === "failed" ? "rose" : "emerald") as Tone,
           },

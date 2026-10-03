@@ -4,12 +4,12 @@ A self-hosted, Hebrew-first (RTL) personal vault for website passwords, network/
 credentials, flexible private records, payment cards and documents. Dockerized and portable:
 everything lives in one directory so it can move from a VPS to a Proxmox VM or LXC.
 
-> **Status: phase 2 — authentication is real, vault data is still mock.** Setup, login
-> (Argon2id + TOTP + recovery codes), sessions, CSRF, brute-force protection and the audit log
-> run against PostgreSQL. The passwords, network, records, cards and documents screens still show
-> **mock data** until the items API lands (phase 3, see
-> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#development-phases)). **Do not store real secrets yet.**
-> `npm run dev:mock` (frontend) runs the old no-backend demo where any password is accepted.
+> **Status: phase 3 — authentication and the vault data API are real; files and backups are not yet.**
+> Setup, login (Argon2id + TOTP + recovery codes), sessions, CSRF, brute-force protection, the audit
+> log, and passwords / network / records / cards (AES-256-GCM, reveal on demand) run against
+> PostgreSQL. **Documents (file upload) and backups are still placeholders** (phases 4 and 6, see
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#development-phases)). Do not rely on it for real secrets
+> until a backup exists. `npm run dev:mock` (frontend) runs the no-backend demo where any password is accepted.
 
 | Dashboard | Passwords (one revealed) |
 |---|---|

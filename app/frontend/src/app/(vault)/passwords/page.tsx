@@ -2,7 +2,7 @@
 import { Suspense, useState } from "react";
 import { ExternalLink, Eye, EyeOff, KeyRound, Plus, Wand2 } from "lucide-react";
 import { useVault, vault } from "@/lib/vault-store";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { estimateEntropy } from "@/lib/password-generator";
 import { hostOf, relativeTime } from "@/lib/format";
 import type { PasswordItem } from "@/lib/types";
@@ -71,10 +71,12 @@ function PasswordForm({ item, onClose }: { item: PasswordItem | null; onClose: (
         next.strength = bits < 45 ? "weak" : bits < 70 ? "fair" : "strong";
         await api.storeSecret(next.id, password);
       }
-      vault.upsert(next);
+      await vault.save(next);
       setPassword("");
       toast(item ? "הרשומה עודכנה" : "הסיסמה נשמרה");
       onClose();
+    } catch (e) {
+      toast(e instanceof ApiError ? e.userMessage : "השמירה נכשלה", "error");
     } finally {
       setBusy(false);
     }

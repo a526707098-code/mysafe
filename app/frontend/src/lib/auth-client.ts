@@ -25,7 +25,7 @@ export interface TotpEnrollment {
   otpauthUri: string;
 }
 
-async function http<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function http<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, {
@@ -52,7 +52,7 @@ async function http<T>(method: string, path: string, body?: unknown): Promise<T>
   if (!res.ok) {
     const wait = typeof json.retryAfterSeconds === "number" ? json.retryAfterSeconds : 0;
     const msg = typeof json.error === "string" ? json.error : "אירעה שגיאה. נסו שוב.";
-    throw new ApiError(wait ? `${msg} (${wait} שניות)` : msg);
+    throw new ApiError(wait ? `${msg} (${wait} שניות)` : msg, res.status);
   }
   return json as T;
 }

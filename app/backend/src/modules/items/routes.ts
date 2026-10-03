@@ -69,6 +69,7 @@ export function registerItemRoutes(app: FastifyInstance, deps: ItemsDeps) {
     category: uuid.optional(),
     tag: z.string().max(40).optional(),
     q: z.string().max(200).optional(),
+    withNotes: z.enum(["true", "false"]).optional(),
   });
 
   app.get("/api/items", guard, async (req, reply) => {
@@ -81,6 +82,7 @@ export function registerItemRoutes(app: FastifyInstance, deps: ItemsDeps) {
         categoryId: q.data.category,
         tag: q.data.tag,
         q: q.data.q,
+        withNotes: q.data.withNotes === "true",
       }),
     };
   });
